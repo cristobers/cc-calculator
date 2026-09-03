@@ -410,9 +410,7 @@ function evalExpression(expr)
     if getmetatable(expr) == Literal then
         return expr.value
     elseif getmetatable(expr) == Unary then
-        if expr.token.type == TokenType.MINUS and getmetatable(expr.expr) == Literal then
-            return -expr.expr.value
-        end
+        return -evalExpression(expr.expr)
     elseif getmetatable(expr) == Grouping then
         return evalExpression(expr.value)
     elseif getmetatable(expr) == Binary then
@@ -428,7 +426,8 @@ function evalExpression(expr)
             return left * right
         end
     end
-    return "nil"
+    -- We've hit a case that's unknown.
+    return nil
 end
 
 function what_is_this_table(t)
@@ -451,8 +450,6 @@ function main()
         local msg = readInput()
         local scanner = Scanner:new(msg)
         scanner:scanTokens()
-        -- this part is fine
-        -- scanner:debugPrint(scanner.tokens)
         if scanner.hadError then
             scanner.hadError = false
             goto start
@@ -464,8 +461,9 @@ function main()
             print("expression was nil.") 
             return
         end
-        -- print(printExpression(expression))
-        print(evalExpression(expression))
+        local result = evalExpression(expression)
+        if result == nil then print("we hit an error idk lol") goto start end
+        print(result)
     end
 end
 
