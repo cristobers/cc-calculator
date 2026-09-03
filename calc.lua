@@ -16,7 +16,7 @@
     term       -> factor ( ( '-' | '+' ) factor )* ;
     factor     -> unary  ( ( '/' | '*' ) unary )*  ;
     unary      -> ('-') unary | primary ;
-    primary    -> NUMBER | "(" expression ")"
+    primary    -> NUMBER | "(" expression ")" ;
 
 ]]
 
@@ -151,7 +151,7 @@ end
 
 function Scanner:peekNext()
     if (self.current + 1 >= #self.source) then return '\0' end
-    print(self.source, self.current, self.current + 1, #self.source)
+    -- print(self.source, self.current, self.current + 1, #self.source)
     return self.source[self.current + 1]
 end
 
@@ -313,6 +313,7 @@ function Parser:factor()
     while self:match(TokenType.DIVIDE, TokenType.MULTIPLY) do
         local operator = self:previous()
         local right = self:unary()
+        -- print(expr, operator, right)
         expr = Binary:new(expr, operator, right)
     end
     return expr
@@ -329,6 +330,7 @@ end
 
 function Parser:primary()
     if self:match(TokenType.LITERAL) then
+        -- print(self:previous())
         return Literal:new(nil, self:previous().value)
     end
     if self:match(TokenType.OP_PAREN) then
@@ -400,7 +402,7 @@ function printExpression(expr)
                 " " .. printExpression(expr.left))
         end
     end
-    return "nil"
+    return nil
 end
 
 -- ---@param expr Expr
@@ -408,8 +410,8 @@ function evalExpression(expr)
     if getmetatable(expr) == Literal then
         return expr.value
     elseif getmetatable(expr) == Unary then
-        if expr.token.type == TokenType.MINUS then
-            return -expr.value
+        if expr.token.type == TokenType.MINUS and getmetatable(expr.expr) == Literal then
+            return -expr.expr.value
         end
     elseif getmetatable(expr) == Grouping then
         return evalExpression(expr.value)
@@ -429,6 +431,19 @@ function evalExpression(expr)
     return "nil"
 end
 
+function what_is_this_table(t)
+    local output = "This is a "
+    local result = getmetatable(t)
+    if result == Literal then output = output .. "Literal"
+    elseif result == Binary then output = output .. "Binary"
+    elseif result == Unary then output = output .. "Unary" 
+    elseif result == Grouping then output = output .. "Grouping"
+    end
+    if result == nil then print("This is nil.") else 
+        print(tostring(t) .. " : " .. output) 
+    end
+end
+
 function main()
     print("CTRL+T to leave the REPL.")
     while true do
@@ -436,13 +451,17 @@ function main()
         local msg = readInput()
         local scanner = Scanner:new(msg)
         scanner:scanTokens()
+        -- this part is fine
+        -- scanner:debugPrint(scanner.tokens)
         if scanner.hadError then
+            scanner.hadError = false
             goto start
         end
         local parser = Parser:new(scanner.tokens)
+        assert(parser.tokens == scanner.tokens, "wtf")
         local expression = parser:parse()
         if expression == nil then 
-            print("expression as nil.") 
+            print("expression was nil.") 
             return
         end
         -- print(printExpression(expression))
