@@ -52,14 +52,14 @@ Token = {type = TokenType.EMPTY, text = "", value = nil}
 ---@param text string
 ---@param type TokenType
 ---@param value number | nil
-function Token:new(object, type, text, value)
-    local object = object or {}
+function Token:new(type, text, value)
+    local object = {
+        type = type,
+        text = text,
+        value = value
+    }
     setmetatable(object, self)
     self.__index = self
-
-    object.type = type
-    object.text = text
-    object.value = value
 
     return object
 end
@@ -97,28 +97,28 @@ function Scanner:scanTokens()
         self.start = self.current
         local char = self:advance()
         if char == '(' then
-            self:addToken(Token:new(nil, TokenType.OP_PAREN, '('))
+            self:addToken(Token:new(TokenType.OP_PAREN, '('))
         elseif char == ')' then
-            self:addToken(Token:new(nil, TokenType.CL_PAREN, ')'))
+            self:addToken(Token:new(TokenType.CL_PAREN, ')'))
         elseif char == '.' then
-            self:addToken(Token:new(nil, TokenType.DOT, '.'))
+            self:addToken(Token:new(TokenType.DOT, '.'))
         elseif char == '+' then
-            self:addToken(Token:new(nil, TokenType.PLUS, '+'))
+            self:addToken(Token:new(TokenType.PLUS, '+'))
         elseif char == '*' then
-            self:addToken(Token:new(nil, TokenType.MULTIPLY, '*'))
+            self:addToken(Token:new(TokenType.MULTIPLY, '*'))
         elseif char == '/' then
-            self:addToken(Token:new(nil, TokenType.DIVIDE, '/'))
+            self:addToken(Token:new(TokenType.DIVIDE, '/'))
         elseif char == '-' then
-            self:addToken(Token:new(nil, TokenType.MINUS, '-'))
+            self:addToken(Token:new(TokenType.MINUS, '-'))
         else
             if self:isDigit(char) then
                 self:number()
             elseif not self:isWhitespace(char) then
-                self:error("Unknown character.")
+                self:error("Unknown character: " .. "\"" .. char .. "\"")
             end
         end
     end
-    self:addToken(Token:new(nil, TokenType.EOF, '\0'))
+    self:addToken(Token:new(TokenType.EOF, '\0'))
 end
 
 ---@return nil 
@@ -151,7 +151,6 @@ function Scanner:number()
     local text = self.source:sub(self.start, self.current - 1)
 
     self:addToken(Token:new(
-        nil,
         TokenType.LITERAL,
         text,
         tonumber(text)
@@ -409,6 +408,81 @@ end
 
 -- ** Parser End ** --
 
+-- ** Tests Start ** --
+
+--[[
+    Instead of having a bunch of functions that run at the bottom,
+    lets make a nice framework for testing the output.
+]] 
+
+---@class Test
+---@field expression string
+---@field expectedResult number | nil
+Test = { expression = "", expectedResult = nil }
+
+---@param expression string
+---@param expectedResult number | nil
+function Test:new(expression, expectedResult)
+    local object = {
+        expression = expression,
+        expectedResult = expectedResult
+    }
+    setmetatable(object, self)
+    self.__index = self
+
+    return object
+end
+
+function Test:run()
+    -- You could maybe have this just reuse the same scanner and parser for each test,
+    -- but there's so little tests being ran, 
+    -- and there's no real performance hit to just remaking them each time.
+    local scanner = Scanner:new(self.expression)
+    scanner:scanTokens()
+    local parser = Parser:new(scanner.tokens)
+    local expression = parser:parse()
+    return evalExpression(expression) == self.expectedResult
+end
+
+---@class Tests
+---@field tests Test[]
+Tests = {}
+
+function Tests:new(tests)
+    local object = {
+        tests = tests
+    }
+    setmetatable(object, self)
+    self.__index = self
+
+    return object
+end
+
+---@return boolean | nil
+function Tests:run()
+    -- make sure that self.tests exists, and that it's populated.
+    local testsExist = self.tests and #self.tests > 0
+    if not testsExist then
+        -- throw some kind of error
+        return nil
+    end
+    for index, test in ipairs(self.tests) do
+        local output = "Test " .. index .. "/" .. #self.tests .. ": "
+        local result = test:run()
+        if result then
+            output = output .. "SUCCESS"
+        else
+            output = output .. "FAILED"
+            print(output)
+            return false
+        end
+        print(output)
+    end
+    return true
+end
+
+-- **  Tests End  ** --
+
 ---@return string
 function paren(str)
     return "(" .. str .. ")"
@@ -445,18 +519,16 @@ function evalExpression(expr)
     elseif getmetatable(expr) == Grouping then
         return evalExpression(expr.expression)
     elseif getmetatable(expr) == Binary then
+        local left = evalExpression(expr.left)
+        local right = evalExpression(expr.right)
         if expr.operator.type == TokenType.MINUS then
-            return evalExpression(expr.left) - evalExpression(expr.right)
-            -- return left - right
+            return left - right
         elseif expr.operator.type == TokenType.PLUS then
-            -- return left + right
-            return evalExpression(expr.left) + evalExpression(expr.right)
+            return left + right
         elseif expr.operator.type == TokenType.DIVIDE then
-            -- return left / right
-            return evalExpression(expr.left) / evalExpression(expr.right)
+            return left / right
         elseif expr.operator.type == TokenType.MULTIPLY then
-            -- return left * right
-            return evalExpression(expr.left) * evalExpression(expr.right)
+            return left * right
         end
     end
     -- We've hit a case that's unknown.
@@ -478,12 +550,16 @@ function what_is_this_table(t)
     print(tostring(t) .. " : " .. output)
 end
 
+---@type string[]
+local history = {}
+
 ---@return nil
 function main()
     print("CTRL+T to leave the REPL.")
     while true do
         ::start::
         local msg = readInput()
+        table.insert(history, msg)
         local scanner = Scanner:new(msg)
         scanner:scanTokens()
         if scanner.hadError then
@@ -506,43 +582,33 @@ end
 ---@return string
 function readInput()
     io.write("calc> ")
-    return read()
+    return read(nil, history)
 end
 
 main()
 
----@return number | nil
-function testingFunction(input)
-    local scanner = Scanner:new(input)
-    scanner:scanTokens()
-    local parser = Parser:new(scanner.tokens)
-    local expression = parser:parse()
-    return evalExpression(expression)
+-- If you comment out main, you can get these to run.
+local tests = Tests:new(
+    {
+        Test:new("1", 1),
+        Test:new("(300 + (3 * 2))", 306),
+        Test:new("()", nil),
+        Test:new("(())", nil),
+        Test:new("(200 + 3) * 4", 812),
+        Test:new("200 + (3 * 4)", 212),
+        Test:new("200 + (3 * (5 + 2))", 221),
+        Test:new("6/2", 3),
+        Test:new("200 * 4", 800),
+        Test:new("5 + 5", 10),
+        Test:new("5 - 3", 2),
+    }
+)
+
+local result = tests:run()
+if result == nil then
+    print("Tests failed to run, no tests found.")
+elseif result == false then
+    print("One of the tests failed.")
+else
+    print("All of the tests succeeded.")
 end
-
----@return boolean
-function test(input, expectedValue)
-    local result = testingFunction(input)
-    if result ~= expectedValue then
-        print(
-        "Failed to pass test: " .. input .. ", was given value: " .. tostring(expectedValue)
-        .. ", expected: " .. result
-        )
-        return false 
-    end
-    return true
-end
-
--- these are my sanity checks,
--- if you see no output, then things are good.
-
-test("1", 1)
-test("(300 + (3 * 2))", 306)
-test("()", nil)
-test("(())", nil)
-test("(200 + 3) * 4", 812)
-test("200 + (3 * 4)", 212)
-test("6/2", 3)
-test("200 * 4", 800)
-test("5 + 5", 10)
-test("5 - 3", 2)
